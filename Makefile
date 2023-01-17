@@ -23,6 +23,8 @@ clean:
 
 docker:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose build
+docker_aarch64:
+	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose-aarch64.yml build
 
 docker-up:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose up
@@ -33,3 +35,8 @@ docker-test:
 instrumented:
 	gowrap gen -p github.com/brave/go-sync/datastore -i Datastore -t ./.prom-gowrap.tmpl -o ./datastore/instrumented_datastore.go
 	gowrap gen -p github.com/brave/go-sync/cache -i RedisClient -t ./.prom-gowrap.tmpl -o ./cache/instrumented_redis.go
+clean_docker:
+	docker image prune -a -f
+	docker volume prune -f
+	docker network prune -f
+	docker system prune --volumes -f
