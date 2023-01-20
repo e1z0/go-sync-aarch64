@@ -82,6 +82,42 @@ networks:
       config:
         - subnet: 172.16.21.0/24
 ```
+# Brave browser configuration MacOS
+
+You can simple run browser with parameter:
+
+```
+/Applications/Brave\ Browser.app/Contents/MacOS/Brave\ Browser --sync-url=https://brave.domain.com/v2
+```
+But if you need more simplicity just follow these instructions:
+
+Add file named "launcher" to **/Applications/Brave Browser.app/Contents/MacOS/launcher** with these contents
+```
+#!/bin/sh
+RealBin="Brave Browser"
+AppDir="$(dirname "$0")"
+exec "$AppDir/$RealBin" --sync-url=https://brave.domain.com/v2 "$@"
+```
+Now edit **Info.plist**:
+```
+/usr/libexec/PlistBuddy -c "Set CFBundleExecutable launcher" /Applications/Brave\ Browser.app/Contents/Info.plist
+```
+Check if it's changed:
+```
+/usr/libexec/PlistBuddy -c "Print CFBundleExecutable" /Applications/Brave\ Browser.app/Contents/Info.plist
+```
+If everything is ok. Now we need to move "Brave Browser" from **/Applications** to your **Desktop** (use **Shift+CMD** while dragging). This will trick MacOS cache to re-read **Info.plist**.
+
+# Brave browser configuration Windows
+
+On the windows system it's never been so simple, just right click on the desktop shortcut of "Brave Browser" and select properties, or just press alt+enter. Now under the **target** field add parameter after brave.exe"
+```
+--sync-url=https://brave.domain.com/v2
+```
+Full line should look like this:
+```
+"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" --sync-url=https://brave.domain.com/v2
+```
 
 # Brave Sync Server v2
 
