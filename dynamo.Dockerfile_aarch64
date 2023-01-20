@@ -25,4 +25,6 @@ FROM amazon/dynamodb-local:1.13.5
 ARG DB_LOCATION
 COPY --chown=dynamodblocal:dynamodblocal --from=install ${DB_LOCATION} /db
 
+VOLUME [ "/db" ]
+
 CMD ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/db"]

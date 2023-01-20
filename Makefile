@@ -28,6 +28,15 @@ docker_aarch64:
 
 docker-up:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose up
+docker-up_aarch64:
+	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose-aarch64.yml up -d
+docker-down_aarch64:
+	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose-aarch64.yml down
+docker-upload_aarch64:
+	docker tag go-sync_dynamo-local:latest nulldevil/go-sync_dynamo:aarch64
+	docker push nulldevil/go-sync_dynamo:aarch64
+	docker tag go-sync_dev:latest nulldevil/brave-go-sync:aarch64
+	docker push nulldevil/brave-go-sync:aarch64
 
 docker-test:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose.yml run --rm dev make test
