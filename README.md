@@ -1,3 +1,88 @@
+# This fork
+
+This fork enables you to run Brave Sync Server v2 on ARM64 (aarch64) docker containers. Docker swarm supported by default. Please note that nfs file systems are currently unsupported.
+
+```
+version: '3.4'
+
+services:
+  web:
+    image: nulldevil/brave-go-sync:aarch64
+    depends_on:
+      - dynamo-local
+      - redis
+    networks:
+      - sync
+      - traefik_public
+    command: "./main"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.75' # one cpu
+          memory: 480M
+      placement:
+        constraints: [node.labels.name == node0]
+      labels:
+        # traefik common
+        - traefik.enable=true
+        - traefik.docker.network=traefik_public
+        # traefikv1
+        - traefik.frontend.rule=Host:brave.domain.com
+        - traefik.port=8295
+        # traefikv2
+        - "traefik.http.routers.brave.rule=Host(`brave.domain.com`)"
+        - "traefik.http.services.brave.loadbalancer.server.port=8295"
+    environment:
+      - PPROF_ENABLED=true
+      - SENTRY_DSN
+      - ENV=local
+      - DEBUG=1
+      - AWS_ACCESS_KEY_ID=#
+      - AWS_SECRET_ACCESS_KEY=#
+      - AWS_REGION=us-west-2
+      - AWS_ENDPOINT=http://dynamo-local:8000
+      - TABLE_NAME=client-entity-dev
+      - REDIS_URL=redis:6379
+  dynamo-local:
+    image: nulldevil/go-sync_dynamo:aarch64
+    volumes:
+     - ./data/db:/db
+    user: root
+    deploy:
+      resources:
+        limits:
+          cpus: '2.75' # one cpu
+          memory: 480M
+      placement:
+        constraints: [node.labels.name == node0]
+    networks:
+      - sync
+  redis:
+    image: public.ecr.aws/ubuntu/redis:latest
+    volumes:
+     - ./data/redis:/var/lib/redis
+    deploy:
+      resources:
+        limits:
+          cpus: '2.75' # one cpu
+          memory: 480M
+      placement:
+        constraints: [node.labels.name == node0]
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      - sync
+
+networks:
+  traefik_public:
+    external: true
+  sync:
+    driver: overlay
+    ipam:
+      config:
+        - subnet: 172.16.21.0/24
+```
+
 # Brave Sync Server v2
 
 A sync server implemented in go to communicate with Brave sync clients using
