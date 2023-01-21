@@ -24,7 +24,11 @@ FROM amazon/dynamodb-local:1.13.5
 
 ARG DB_LOCATION
 COPY --chown=dynamodblocal:dynamodblocal --from=install ${DB_LOCATION} /db
+COPY --chown=dynamodblocal:dynamodblocal --from=install ${DB_LOCATION} /db-orig
+COPY dynamo_init.sh /dynamo_init.sh
 
 VOLUME [ "/db" ]
 
-CMD ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/db"]
+ENTRYPOINT [ "/dynamo_init.sh" ]
+#CMD ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/db"]
+
