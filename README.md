@@ -108,6 +108,22 @@ Check if it's changed:
 ```
 If everything is ok. Now we need to move "Brave Browser" from **/Applications** to your **Desktop** (use **Shift+CMD** while dragging). This will trick MacOS cache to re-read **Info.plist**.
 
+# Brave browser configuration MacOS (another way)
+
+Make an apple script with contents:
+```
+do shell script "\"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser\" --sync-url=https://brave.domain.com/v2"
+quit
+```
+Save it as **apple script** and then export as **app bundle** on the desktop. Now open **~/Desktop/Your saved bundle.app/Contents/Info.plist**
+And after the first <dict> add these two lines:
+```
+<key>NSUIElement</key>
+<true/>
+```
+Save it and whola!
+
+
 # Brave browser configuration Windows
 
 On the windows system it's never been so simple, just right click on the desktop shortcut of "Brave Browser" and select properties, or just press alt+enter. Now under the **target** field add parameter after brave.exe"
