@@ -2,7 +2,7 @@ GIT_VERSION := $(shell git describe --abbrev=8 --dirty --always --tags)
 GIT_COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_TIME := $(shell date +%s)
 
-.PHONY: all build test lint clean
+.PHONY: all build test lint clean docker
 
 all: lint test build
 
@@ -28,17 +28,27 @@ lint:
 clean:
 	rm -f sync-server
 
-docker:
+docker-build:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose build
+
+docker-upload:
+	docker tag go-sync-aarch64_dynamo-local:latest nulldevil/go-sync_dynamo:latest
+	docker push nulldevil/go-sync_dynamo:latest
+	docker tag go-sync-aarch64_dev:latest nulldevil/brave-go-sync:latest
+	docker push nulldevil/brave-go-sync:latest
+
 docker_aarch64:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose-aarch64.yml build
 
 docker-up:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose up
+
 docker-up_aarch64:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose-aarch64.yml up -d
+
 docker-down_aarch64:
 	COMMIT=$(GIT_COMMIT) VERSION=$(GIT_VERSION) BUILD_TIME=$(BUILD_TIME) docker-compose -f docker-compose-aarch64.yml down
+
 docker-upload_aarch64:
 	docker tag go-sync-aarch64_dynamo-local:latest nulldevil/go-sync_dynamo:aarch64
 	docker push nulldevil/go-sync_dynamo:aarch64
