@@ -25,6 +25,7 @@ const (
 	setSyncPollInterval        int32  = 30
 	nigoriTypeID               int32  = 47745
 	deviceInfoTypeID           int    = 154522
+	historyTypeID              int    = 963985
 	maxActiveDevices           int    = 50
 )
 
@@ -87,9 +88,6 @@ func handleGetUpdatesRequest(cache *cache.Cache, guMsg *sync_pb.GetUpdatesMessag
 	}
 
 	maxSize := maxGUBatchSize
-	if guMsg.BatchSize != nil && int(*guMsg.BatchSize) < maxGUBatchSize {
-		maxSize = int(*guMsg.BatchSize)
-	}
 
 	// Process from_progress_marker
 	guRsp.NewProgressMarker = make([]*sync_pb.DataTypeProgressMarker, len(guMsg.FromProgressMarker))
@@ -244,8 +242,21 @@ func handleCommitRequest(cache *cache.Cache, commitMsg *sync_pb.CommitMessage, c
 		}
 
 		oldVersion := *entityToCommit.Version
+		isUpdateOp := oldVersion != 0
 		*entityToCommit.Version = *entityToCommit.Mtime
-		if oldVersion == 0 { // Create
+		if *entityToCommit.DataType == historyTypeID {
+			// Check if item exists using client_unique_tag
+			isUpdateOp, err = db.HasItem(clientID, *entityToCommit.ClientDefinedUniqueTag)
+			if err != nil {
+				log.Error().Err(err).Msg("Insert history sync entity failed")
+				rspType := sync_pb.CommitResponse_TRANSIENT_ERROR
+				entryRsp.ResponseType = &rspType
+				entryRsp.ErrorMessage = aws.String(fmt.Sprintf("Insert history sync entity failed: %v", err.Error()))
+				continue
+			}
+		}
+
+		if !isUpdateOp { // Create
 			if itemCount+count >= maxClientObjectQuota {
 				rspType := sync_pb.CommitResponse_OVER_QUOTA
 				entryRsp.ResponseType = &rspType
@@ -273,7 +284,7 @@ func handleCommitRequest(cache *cache.Cache, commitMsg *sync_pb.CommitMessage, c
 
 			count++
 		} else { // Update
-			conflict, delete, err := db.UpdateSyncEntity(entityToCommit, oldVersion)
+			conflict, deleted, err := db.UpdateSyncEntity(entityToCommit, oldVersion)
 			if err != nil {
 				log.Error().Err(err).Msg("Update sync entity failed")
 				rspType := sync_pb.CommitResponse_TRANSIENT_ERROR
@@ -286,7 +297,7 @@ func handleCommitRequest(cache *cache.Cache, commitMsg *sync_pb.CommitMessage, c
 				entryRsp.ResponseType = &rspType
 				continue
 			}
-			if delete {
+			if deleted {
 				count--
 			}
 		}
@@ -322,7 +333,7 @@ func handleCommitRequest(cache *cache.Cache, commitMsg *sync_pb.CommitMessage, c
 
 // handleClearServerDataRequest handles clearing user data from the datastore and cache
 // and fills the response
-func handleClearServerDataRequest(cache *cache.Cache, db datastore.Datastore, msg *sync_pb.ClearServerDataMessage, clientID string) (*sync_pb.SyncEnums_ErrorType, error) {
+func handleClearServerDataRequest(cache *cache.Cache, db datastore.Datastore, _ *sync_pb.ClearServerDataMessage, clientID string) (*sync_pb.SyncEnums_ErrorType, error) {
 	errCode := sync_pb.SyncEnums_SUCCESS
 	var err error
 

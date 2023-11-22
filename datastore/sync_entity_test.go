@@ -196,6 +196,46 @@ func (suite *SyncEntityTestSuite) TestHasServerDefinedUniqueTag() {
 	suite.Assert().Equal(hasTag, true)
 }
 
+func (suite *SyncEntityTestSuite) TestHasItem() {
+	// Insert entity which will be checked later
+	entity1 := datastore.SyncEntity{
+		ClientID:      "client1",
+		ID:            "id1",
+		Version:       aws.Int64(1),
+		Ctime:         aws.Int64(12345678),
+		Mtime:         aws.Int64(12345678),
+		DataType:      aws.Int(123),
+		Folder:        aws.Bool(false),
+		Deleted:       aws.Bool(false),
+		DataTypeMtime: aws.String("123#12345678"),
+		Specifics:     []byte{1, 2},
+	}
+	entity2 := entity1
+	entity2.ClientID = "client2"
+	entity2.ID = "id2"
+
+	_, err := suite.dynamo.InsertSyncEntity(&entity1)
+	suite.Require().NoError(err, "InsertSyncEntity should succeed")
+	_, err = suite.dynamo.InsertSyncEntity(&entity2)
+	suite.Require().NoError(err, "InsertSyncEntity should succeed")
+
+	hasTag, err := suite.dynamo.HasItem("client1", "id1")
+	suite.Require().NoError(err, "HasItem should succeed")
+	suite.Assert().Equal(hasTag, true)
+
+	hasTag, err = suite.dynamo.HasItem("client2", "id2")
+	suite.Require().NoError(err, "HasItem should succeed")
+	suite.Assert().Equal(hasTag, true)
+
+	hasTag, err = suite.dynamo.HasItem("client2", "id3")
+	suite.Require().NoError(err, "HasItem should succeed")
+	suite.Assert().Equal(hasTag, false)
+
+	hasTag, err = suite.dynamo.HasItem("client3", "id2")
+	suite.Require().NoError(err, "HasItem should succeed")
+	suite.Assert().Equal(hasTag, false)
+}
+
 func (suite *SyncEntityTestSuite) TestInsertSyncEntitiesWithServerTags() {
 	// Insert with same ClientID and server tag would fail.
 	entity1 := datastore.SyncEntity{
@@ -299,10 +339,10 @@ func (suite *SyncEntityTestSuite) TestUpdateSyncEntity_Basic() {
 	updateEntity1.Deleted = aws.Bool(true)
 	updateEntity1.DataTypeMtime = aws.String("123#23456789")
 	updateEntity1.Specifics = []byte{3, 4}
-	conflict, delete, err := suite.dynamo.UpdateSyncEntity(&updateEntity1, *entity1.Version)
+	conflict, deleted, err := suite.dynamo.UpdateSyncEntity(&updateEntity1, *entity1.Version)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().False(conflict, "Successful update should not have conflict")
-	suite.Assert().True(delete, "Delete operation should return true")
+	suite.Assert().True(deleted, "Delete operation should return true")
 
 	// Update with optional fields.
 	updateEntity2 := updateEntity1
@@ -313,35 +353,85 @@ func (suite *SyncEntityTestSuite) TestUpdateSyncEntity_Basic() {
 	updateEntity2.ParentID = aws.String("parentID")
 	updateEntity2.Name = aws.String("name")
 	updateEntity2.NonUniqueName = aws.String("non_unique_name")
-	conflict, delete, err = suite.dynamo.UpdateSyncEntity(&updateEntity2, *entity2.Version)
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity2, *entity2.Version)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().False(conflict, "Successful update should not have conflict")
-	suite.Assert().False(delete, "Non-delete operation should return false")
+	suite.Assert().False(deleted, "Non-delete operation should return false")
 
 	// Update with nil Folder and Deleted
 	updateEntity3 := updateEntity1
 	updateEntity3.ID = "id3"
 	updateEntity3.Folder = nil
 	updateEntity3.Deleted = nil
-	conflict, delete, err = suite.dynamo.UpdateSyncEntity(&updateEntity3, *entity3.Version)
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity3, *entity3.Version)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().False(conflict, "Successful update should not have conflict")
-	suite.Assert().False(delete, "Non-delete operation should return false")
+	suite.Assert().False(deleted, "Non-delete operation should return false")
 	// Reset these back to false because they will be the expected value in DB.
 	updateEntity3.Folder = aws.Bool(false)
 	updateEntity3.Deleted = aws.Bool(false)
 
 	// Update entity again with the wrong old version as (version mismatch)
 	// should return false.
-	conflict, delete, err = suite.dynamo.UpdateSyncEntity(&updateEntity2, 12345678)
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity2, 12345678)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().True(conflict, "Update with the same version should return conflict")
-	suite.Assert().False(delete, "Conflict operation should return false for delete")
+	suite.Assert().False(deleted, "Conflict operation should return false for delete")
 
 	// Check sync entities are updated correctly in DB.
 	syncItems, err = datastoretest.ScanSyncEntities(suite.dynamo)
 	suite.Require().NoError(err, "ScanSyncEntities should succeed")
 	suite.Assert().Equal(syncItems, []datastore.SyncEntity{updateEntity1, updateEntity2, updateEntity3})
+}
+
+func (suite *SyncEntityTestSuite) TestUpdateSyncEntity_HistoryType() {
+	// Insert a history item
+	entity1 := datastore.SyncEntity{
+		ClientID:               "client1",
+		ID:                     "id1",
+		Version:                aws.Int64(1),
+		ClientDefinedUniqueTag: aws.String("client_tag1"),
+		Ctime:                  aws.Int64(12345678),
+		Mtime:                  aws.Int64(12345678),
+		DataType:               aws.Int(963985),
+		Folder:                 aws.Bool(false),
+		Deleted:                aws.Bool(false),
+		DataTypeMtime:          aws.String("123#12345678"),
+		Specifics:              []byte{1, 2},
+	}
+	conflict, err := suite.dynamo.InsertSyncEntity(&entity1)
+	suite.Require().NoError(err, "InsertSyncEntity should succeed")
+	suite.Assert().False(conflict, "Successful insert should not have conflict")
+
+	updateEntity1 := entity1
+	updateEntity1.Version = aws.Int64(2)
+	updateEntity1.Folder = aws.Bool(true)
+	updateEntity1.Mtime = aws.Int64(24242424)
+	conflict, deleted, err := suite.dynamo.UpdateSyncEntity(&updateEntity1, 1)
+	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
+	suite.Assert().False(conflict, "Successful update should not have conflict")
+	suite.Assert().False(deleted, "Non-delete operation should return false")
+
+	// should still succeed with the same version number,
+	// since the version number should be ignored
+	updateEntity2 := updateEntity1
+	updateEntity2.Mtime = aws.Int64(42424242)
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity2, 1)
+	suite.Require().NoError(err, "UpdateSyncEntity should not return an error")
+	suite.Assert().False(conflict, "Successful update should not have conflict")
+	suite.Assert().False(deleted, "Non-delete operation should return false")
+
+	updateEntity3 := entity1
+	updateEntity3.Deleted = aws.Bool(true)
+
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity3, 1)
+	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
+	suite.Assert().False(conflict, "Successful update should not have conflict")
+	suite.Assert().True(deleted, "Delete operation should return true")
+
+	syncItems, err := datastoretest.ScanSyncEntities(suite.dynamo)
+	suite.Require().NoError(err, "ScanSyncEntities should succeed")
+	suite.Assert().Equal(syncItems, []datastore.SyncEntity{updateEntity3})
 }
 
 func (suite *SyncEntityTestSuite) TestUpdateSyncEntity_ReuseClientTag() {
@@ -375,24 +465,24 @@ func (suite *SyncEntityTestSuite) TestUpdateSyncEntity_ReuseClientTag() {
 	updateEntity1.Folder = aws.Bool(true)
 	updateEntity1.DataTypeMtime = aws.String("123#23456789")
 	updateEntity1.Specifics = []byte{3, 4}
-	conflict, delete, err := suite.dynamo.UpdateSyncEntity(&updateEntity1, *entity1.Version)
+	conflict, deleted, err := suite.dynamo.UpdateSyncEntity(&updateEntity1, *entity1.Version)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().False(conflict, "Successful update should not have conflict")
-	suite.Assert().False(delete, "Non-delete operation should return false")
+	suite.Assert().False(deleted, "Non-delete operation should return false")
 
 	// Soft-delete the item with wrong version should get conflict.
 	updateEntity1.Deleted = aws.Bool(true)
-	conflict, delete, err = suite.dynamo.UpdateSyncEntity(&updateEntity1, *entity1.Version)
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity1, *entity1.Version)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().True(conflict, "Version mismatched update should have conflict")
-	suite.Assert().False(delete, "Failed delete operation should return false")
+	suite.Assert().False(deleted, "Failed delete operation should return false")
 
 	// Soft-delete the item with matched version.
 	updateEntity1.Version = aws.Int64(34567890)
-	conflict, delete, err = suite.dynamo.UpdateSyncEntity(&updateEntity1, 23456789)
+	conflict, deleted, err = suite.dynamo.UpdateSyncEntity(&updateEntity1, 23456789)
 	suite.Require().NoError(err, "UpdateSyncEntity should succeed")
 	suite.Assert().False(conflict, "Successful update should not have conflict")
-	suite.Assert().True(delete, "Delete operation should return true")
+	suite.Assert().True(deleted, "Delete operation should return true")
 
 	// Check tag item is deleted.
 	tagItems, err = datastoretest.ScanTagItems(suite.dynamo)
@@ -438,9 +528,17 @@ func (suite *SyncEntityTestSuite) TestGetUpdatesForType() {
 	entity3.DataType = aws.Int(124)
 	entity3.DataTypeMtime = aws.String("124#12345679")
 
+	// non-expired item
 	entity4 := entity2
 	entity4.ClientID = "client2"
 	entity4.ID = "id4"
+	entity4.ExpirationTime = aws.Int64(time.Now().Unix() + 300)
+
+	// expired item
+	entity5 := entity2
+	entity5.ClientID = "client2"
+	entity5.ID = "id5"
+	entity5.ExpirationTime = aws.Int64(time.Now().Unix() - 300)
 
 	_, err := suite.dynamo.InsertSyncEntity(&entity1)
 	suite.Require().NoError(err, "InsertSyncEntity should succeed")
@@ -449,6 +547,8 @@ func (suite *SyncEntityTestSuite) TestGetUpdatesForType() {
 	_, err = suite.dynamo.InsertSyncEntity(&entity3)
 	suite.Require().NoError(err, "InsertSyncEntity should succeed")
 	_, err = suite.dynamo.InsertSyncEntity(&entity4)
+	suite.Require().NoError(err, "InsertSyncEntity should succeed")
+	_, err = suite.dynamo.InsertSyncEntity(&entity5)
 	suite.Require().NoError(err, "InsertSyncEntity should succeed")
 
 	// Get all updates for type 123 and client1 using token = 0.
@@ -564,7 +664,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 		Name:                   aws.String("name"),
 		NonUniqueName:          aws.String("non_unique_name"),
 		ServerDefinedUniqueTag: aws.String("server_tag"),
-		ClientDefinedUniqueTag: aws.String("client_tag"),
+		ClientTagHash:          aws.String("client_tag"),
 		Deleted:                aws.Bool(false),
 		Folder:                 aws.Bool(false),
 		Specifics:              specifics,
@@ -577,7 +677,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 		Name:                   pbEntity.Name,
 		NonUniqueName:          pbEntity.NonUniqueName,
 		ServerDefinedUniqueTag: pbEntity.ServerDefinedUniqueTag,
-		ClientDefinedUniqueTag: pbEntity.ClientDefinedUniqueTag,
+		ClientDefinedUniqueTag: pbEntity.ClientTagHash,
 		Deleted:                pbEntity.Deleted,
 		Folder:                 pbEntity.Folder,
 		Specifics:              specificsBytes,
@@ -585,6 +685,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 		DataType:               aws.Int(47745), // nigori type ID
 		OriginatorCacheGUID:    guid,
 		OriginatorClientItemID: pbEntity.IdString,
+		ExpirationTime:         nil,
 	}
 
 	dbEntity, err := datastore.CreateDBSyncEntity(&pbEntity, guid, "client1")
@@ -609,6 +710,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 	expectedDBEntity.Mtime = dbEntity.Mtime
 	expectedDBEntity.DataTypeMtime = aws.String("47745#" + strconv.FormatInt(*dbEntity.Mtime, 10))
 	suite.Assert().Equal(dbEntity, &expectedDBEntity)
+	suite.Assert().Nil(dbEntity.ExpirationTime)
 
 	pbEntity.Deleted = nil
 	pbEntity.Folder = nil
@@ -616,6 +718,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 	suite.Require().NoError(err, "CreateDBSyncEntity should succeed")
 	suite.Assert().False(*dbEntity.Deleted, "Default value should be set for Deleted for new entities")
 	suite.Assert().False(*dbEntity.Folder, "Default value should be set for Deleted for new entities")
+	suite.Assert().Nil(dbEntity.ExpirationTime)
 
 	// Check the case when Ctime and Mtime are provided by the client.
 	pbEntity.Ctime = aws.Int64(12345678)
@@ -624,6 +727,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 	suite.Require().NoError(err, "CreateDBSyncEntity should succeed")
 	suite.Assert().Equal(*dbEntity.Ctime, *pbEntity.Ctime, "Client's Ctime should be respected")
 	suite.Assert().NotEqual(*dbEntity.Mtime, *pbEntity.Mtime, "Client's Mtime should be replaced")
+	suite.Assert().Nil(dbEntity.ExpirationTime)
 
 	// When cacheGUID is nil, ID should be kept and no originator info are filled.
 	dbEntity, err = datastore.CreateDBSyncEntity(&pbEntity, nil, "client1")
@@ -631,6 +735,7 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 	suite.Assert().Equal(dbEntity.ID, *pbEntity.IdString)
 	suite.Assert().Nil(dbEntity.OriginatorCacheGUID)
 	suite.Assert().Nil(dbEntity.OriginatorClientItemID)
+	suite.Assert().Nil(dbEntity.ExpirationTime)
 
 	// Check that when updating from a previous version with guid, ID will not be
 	// replaced.
@@ -640,12 +745,25 @@ func (suite *SyncEntityTestSuite) TestCreateDBSyncEntity() {
 	suite.Assert().Equal(dbEntity.ID, *pbEntity.IdString)
 	suite.Assert().Nil(dbEntity.Deleted, "Deleted won't apply its default value for updated entities")
 	suite.Assert().Nil(dbEntity.Folder, "Deleted won't apply its default value for updated entities")
+	suite.Assert().Nil(dbEntity.ExpirationTime)
 
 	// Empty unique position should be marshalled to nil without error.
 	pbEntity.UniquePosition = nil
 	dbEntity, err = datastore.CreateDBSyncEntity(&pbEntity, guid, "client1")
 	suite.Require().NoError(err)
 	suite.Assert().Nil(dbEntity.UniquePosition)
+	suite.Assert().Nil(dbEntity.ExpirationTime)
+
+	// A history entity should have the client tag hash as the ID,
+	// and an expiration time.
+	historyEntitySpecific := &sync_pb.EntitySpecifics_History{}
+	pbEntity.Specifics = &sync_pb.EntitySpecifics{SpecificsVariant: historyEntitySpecific}
+	dbEntity, err = datastore.CreateDBSyncEntity(&pbEntity, guid, "client1")
+	suite.Require().NoError(err)
+	suite.Assert().Equal(dbEntity.ID, "client_tag")
+	expectedExpirationTime := time.Now().Unix() + datastore.HistoryExpirationIntervalSecs
+	suite.Assert().Greater(*dbEntity.ExpirationTime+2, expectedExpirationTime)
+	suite.Assert().Less(*dbEntity.ExpirationTime-2, expectedExpirationTime)
 
 	// Empty specifics should report marshal error.
 	pbEntity.Specifics = nil
@@ -695,7 +813,7 @@ func (suite *SyncEntityTestSuite) TestCreatePBSyncEntity() {
 		Name:                   dbEntity.Name,
 		NonUniqueName:          dbEntity.NonUniqueName,
 		ServerDefinedUniqueTag: dbEntity.ServerDefinedUniqueTag,
-		ClientDefinedUniqueTag: dbEntity.ClientDefinedUniqueTag,
+		ClientTagHash:          dbEntity.ClientDefinedUniqueTag,
 		OriginatorCacheGuid:    dbEntity.OriginatorCacheGUID,
 		OriginatorClientItemId: dbEntity.OriginatorClientItemID,
 		Deleted:                dbEntity.Deleted,
